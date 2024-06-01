@@ -1,10 +1,11 @@
 <template>
   <div class="container">
     <form @submit.prevent="save" class="form">
-      <input type="text" v-model="form.title" placeholder="Judul" class="input"/><br />
+      <input type="text" v-model="form.title" placeholder="Judul" class="input" /><br />
       <textarea v-model="form.content" placeholder="Konten" class="textarea"></textarea><br />
       <button type="submit" class="button">Simpan</button>
     </form>
+    <div v-if="error" class="error-message">{{ error }}</div>
     <ul class="article-list">
       <li v-for="article in articles" :key="article.id" class="article-item">
         <div class="article-content">
@@ -24,6 +25,7 @@
 <script>
 import { ref, onMounted, reactive } from 'vue';
 import axios from "axios";
+import { v4 as uuidv4 } from 'uuid'; // Import uuidv4 sebagai uuid
 
 export default {
   setup() {
@@ -34,50 +36,72 @@ export default {
     });
 
     const articles = ref([]);
+    const error = ref(null);
 
     async function load() {
       try {
         const response = await axios.get('http://localhost:3000/articles');
         articles.value = response.data;
-      } catch (error) {
-        console.error('Error loading articles:', error);
+        error.value = null;
+      } catch (err) {
+        console.error('Error loading articles:', err);
+        error.value = 'Error loading articles. Please ensure the server is running.';
       }
     }
 
     async function save() {
       try {
-        const url = form.id
-          ? `http://localhost:3000/articles/${form.id}`
-          : 'http://localhost:3000/articles'; 
-        const method = form.id ? 'put' : 'post';
-        const response = await axios[method](url, form);
+        let url = 'http://localhost:3000/articles';
 
         if (form.id) {
+          // Jika form.id terdefinisi, maka lakukan update (PUT)
+          url += `/${form.id}`;
+
+          const response = await axios.put(url, form);
+
+          // Update artikel di dalam list dengan respons dari server
           articles.value = articles.value.map((article) =>
-            article.id === response.data.id ? response.data : article
+            article.id === form.id ? response.data : article
           );
         } else {
+          // Jika form.id belum terdefinisi, maka lakukan create (POST)
+          form.id = uuidv4();
+          const response = await axios.post(url, form);
+
+          // Tambahkan artikel baru ke dalam list
           articles.value.push(response.data);
         }
 
+        // Kosongkan form setelah operasi berhasil
         form.id = null;
         form.title = '';
         form.content = '';
-      } catch (error) {
-        console.error('Error saving article:', error);
+        error.value = null;
+      } catch (err) {
+        console.error('Error saving article:', err);
+        error.value = 'Error saving article. Please ensure the server is running.';
       }
     }
 
     async function remove(id) {
       try {
-        await axios.delete(`http://localhost:3000/articles/${id}`);
-        articles.value = articles.value.filter(article => article.id !== id);
-      } catch (error) {
-        console.error('Error deleting article:', error);
+        const response = await axios.delete(`http://localhost:3000/articles/${id}`);
+        if (response.status === 200) {
+          // Hapus artikel dari list lokal
+          articles.value = articles.value.filter(article => article.id !== id);
+          error.value = null;
+        } else {
+          console.error('Failed to delete article:', response);
+          error.value = 'Failed to delete article. Please ensure the server is running.';
+        }
+      } catch (err) {
+        console.error('Error deleting article:', err);
+        error.value = 'Error deleting article. Please ensure the server is running.';
       }
     }
 
     function edit(article) {
+      // Isi form dengan data artikel yang akan diedit
       form.id = article.id;
       form.title = article.title;
       form.content = article.content;
@@ -85,7 +109,7 @@ export default {
 
     onMounted(load);
 
-    return { form, articles, save, edit, remove };
+    return { form, articles, error, save, edit, remove, load };
   },
 };
 </script>
@@ -102,7 +126,8 @@ export default {
   margin-bottom: 20px;
 }
 
-.input, .textarea {
+.input,
+.textarea {
   width: 100%;
   padding: 10px;
   margin-bottom: 10px;
@@ -163,5 +188,10 @@ export default {
 .article-actions {
   display: flex;
   gap: 10px;
+}
+
+.error-message {
+  color: red;
+  margin-bottom: 20px;
 }
 </style>
